@@ -122,7 +122,13 @@ HAR runs in an owned
 192 MiB Node old-generation heap with one V8 worker. Native decoding applies
 Linux limits of 768 MiB address space, 30 seconds CPU and 96 MiB file output;
 both commands have a 30-second wall deadline and independently supervised
-process cleanup. Owned decoder diagnostics retain at most 1 MiB across stdout
+process cleanup. The HAR decoder is REA's own helper and creates no descendant
+processes, so REA stops it through its child process handle; it does not need
+the native process-group ownership helper, which on macOS is compiled with
+Apple's Swift compiler. The exception is Windows under Bun, described below:
+only the owned Job Object launcher enforces the decoder's memory limit, so it
+starts and stops the decoder there. External mitmdump keeps token-verified
+process-group cleanup. Owned decoder diagnostics retain at most 1 MiB across stdout
 and stderr; the collector drops overflow as it arrives, reports the limit
 failure and verifies cleanup. Heap limits alone do not establish aggregate RSS limits.
 When REA runs on Bun, the HAR decoder runs on Bun, which ignores these V8 heap

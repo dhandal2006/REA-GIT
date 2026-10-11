@@ -14,6 +14,7 @@ const cli = async (
   path: string,
   format: string,
   extra: readonly string[] = [],
+  environment: NodeJS.ProcessEnv = {},
 ) => {
   try {
     const result = await promisify(execFile)(
@@ -26,7 +27,10 @@ const cli = async (
         "--json",
         ...extra,
       ],
-      { env: { ...process.env, REA_MITMDUMP_COMMAND: "" }, timeout: 40_000 },
+      {
+        env: { ...process.env, REA_MITMDUMP_COMMAND: "", ...environment },
+        timeout: 40_000,
+      },
     );
     return { ok: true, stdout: result.stdout };
   } catch (cause: unknown) {
@@ -40,6 +44,27 @@ const cli = async (
   }
 };
 import { historicalHar } from "../../fixtures/historicalHar.js";
+
+it.skipIf(process.platform === "win32")(
+  "decodes HAR when native process-ownership preparation is unavailable",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "rea-history-har-"));
+    onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const path = join(root, "capture.har");
+    await writeFile(path, JSON.stringify(historicalHar()));
+    // macOS compiles the ownership helper with xcrun; Linux reads process
+    // groups with ps. Both are unavailable here, and decoding needs neither.
+    const unavailable =
+      process.platform === "darwin"
+        ? { DEVELOPER_DIR: join(root, "missing-developer-dir") }
+        : { PATH: root };
+    const called = await cli(path, "har", [], unavailable);
+    expect(called.ok, called.stdout).toBe(true);
+    expect(
+      parseEvidence(JSON.parse(called.stdout)).normalized_result,
+    ).toMatchObject({ total_records: historicalHar().log.entries.length });
+  },
+);
 
 it("reads actual upstream HAR packages in an owned process and retains selected producer order", async () => {
   const root = await mkdtemp(join(tmpdir(), "rea-history-har-"));

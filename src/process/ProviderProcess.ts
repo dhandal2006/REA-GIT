@@ -223,6 +223,38 @@ export const spawnOwnedProviderProcess = async (
 };
 
 /**
+ * Spawn a REA-owned helper that creates no descendant processes.
+ *
+ * Node keeps the child's process ID reserved until it reaps the child and then
+ * refuses to signal the handle, so the live handle identifies this process
+ * without native process-group token inspection. External tools, and anything
+ * that may create descendants, use spawnOwnedProviderProcess instead.
+ */
+export const spawnOwnedChildProcess = async (
+  options: OwnedProviderProcessSpawnOptions,
+): Promise<ChildProcess> => {
+  options.signal?.throwIfAborted();
+  if (options.memoryLimitBytes !== undefined)
+    throw new Error(
+      "Owned process memory limits require the Windows Job Object launcher; a direct child cannot enforce one.",
+    );
+  const child = spawn(options.command, [...options.arguments], {
+    shell: false,
+    windowsHide: true,
+    stdio: [options.stdin ?? "ignore", "pipe", "pipe"],
+    env: {
+      ...(options.hostEnvironment ?? process.env),
+      ...options.env,
+      REA_PROCESS_RUN_ID: options.runId,
+    },
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+  });
+  await waitForSpawn(child);
+  if (child.pid === undefined) throw new Error("Owned child has no process ID");
+  return child;
+};
+
+/**
  * Supervises only generic process resources; wire protocol remains adapter-owned.
  *
  * Output retention is complete per stream; adapters own resource budgets. Stop

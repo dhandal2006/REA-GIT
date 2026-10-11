@@ -71,6 +71,7 @@ it.each([true, false])(
         {
           format: "har",
           identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+          supervision: "direct-child",
           command: async (_, runtimePath) => {
             const value = decodeHarCapture(text, []);
             if (!matching) value.decoder.name = "different adapter";
@@ -107,6 +108,7 @@ it("classifies an oversized selected capture before creating an owned decoder", 
       {
         format: "har",
         identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+        supervision: "direct-child",
         command: async () => {
           throw new Error("Oversized input must not launch decoding");
         },
@@ -148,6 +150,7 @@ it("does not misclassify decoder filesystem failures as missing selected input",
       {
         format: "har",
         identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+        supervision: "direct-child",
         command: async () => {
           throw Object.assign(
             new Error("Configured decoder command file missing"),
@@ -189,6 +192,7 @@ it.each(["missing-capture", "missing-reply", "failed-command"])(
         {
           format: "har",
           identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+          supervision: "direct-child",
           command: async () => ({
             command: process.execPath,
             arguments: [
@@ -238,6 +242,7 @@ it("reports an absent owned reply as output failure and removes its private snap
       {
         format: "har",
         identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+        supervision: "direct-child",
         command: async (_, runtimePath) => {
           privatePath = runtimePath;
           return {
@@ -275,6 +280,7 @@ it("cancels after snapshot acquisition before launch and removes private input d
       {
         format: "har",
         identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+        supervision: "direct-child",
         command: async (_, runtimePath) => {
           privatePath = runtimePath;
           controller.abort();
@@ -320,6 +326,7 @@ it.each([
         {
           format: "har",
           identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+          supervision: "direct-child",
           command: async (_, runtimePath) => {
             privatePath = runtimePath;
             await writeFile(
@@ -394,6 +401,7 @@ it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
         {
           format: "har",
           identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+          supervision: "direct-child",
           command: async () => {
             throw new Error("Permission-denied input must not launch decoding");
           },
@@ -437,6 +445,7 @@ it.each(["format", "process"])(
         {
           format: "har",
           identity: HAR_CAPTURE_PROVIDER_IDENTITY,
+          supervision: "direct-child",
           command: async (_, runtimePath) => {
             if (kind === "format")
               await writeFile(

@@ -10,6 +10,8 @@ import {
 export class HarCaptureAdapter implements HistoricalCaptureFormatAdapter {
   readonly format = "har";
   readonly identity = HAR_CAPTURE_PROVIDER_IDENTITY;
+  // The single-threaded Node helper runs only REA's decoder and never spawns.
+  readonly supervision = "direct-child";
   async command(requestPath: string): Promise<{
     command: string;
     arguments: readonly string[];

@@ -1,10 +1,12 @@
 import type {
   OwnedProviderProcessSpawnOptions,
+  ProviderProcessLaunch,
   ProviderProcessSnapshot,
   SpawnedOwnedProviderProcess,
 } from "./ProviderProcess.js";
 import {
   ProviderProcessSupervisor,
+  spawnOwnedChildProcess,
   spawnOwnedProviderProcess,
 } from "./ProviderProcess.js";
 import {
@@ -43,12 +45,23 @@ export const runOwnedCommand = async (
     /** Accept an ordinary nonzero exit after output closes without other process errors. */
     readonly acceptNonZeroExit?: boolean;
   },
-  options: {
-    readonly signal?: AbortSignal;
-    readonly launcher?: (
-      input: OwnedProviderProcessSpawnOptions,
-    ) => Promise<SpawnedOwnedProviderProcess>;
-  } = {},
+  options:
+    | {
+        readonly signal?: AbortSignal;
+        readonly supervision?: "process-group";
+        readonly launcher?: (
+          input: OwnedProviderProcessSpawnOptions,
+        ) => Promise<SpawnedOwnedProviderProcess>;
+      }
+    | {
+        readonly signal?: AbortSignal;
+        /**
+         * Supervise a REA-owned helper that creates no descendant processes
+         * through its live child handle, without process-group token inspection.
+         */
+        readonly supervision: "direct-child";
+        readonly launcher?: never;
+      } = {},
 ): Promise<ProviderProcessSnapshot> => {
   const callerSignal = options.signal ?? spawn.signal;
   if (callerSignal?.aborted)
@@ -61,13 +74,61 @@ export const runOwnedCommand = async (
     return await collectOwnedCommand(
       spawn,
       limits,
-      options.launcher ?? spawnOwnedProviderProcess,
+      options.supervision === "direct-child"
+        ? launchDirectChild
+        : processGroupLauncher(options.launcher ?? spawnOwnedProviderProcess),
       deadline,
       callerSignal,
     );
   } finally {
     deadline.dispose();
   }
+};
+
+/** One supervised launch and the resources retained if its cleanup fails. */
+interface OwnedCommandLaunch {
+  readonly launch: Extract<
+    ProviderProcessLaunch,
+    { ownsProcessLifetime: true }
+  >;
+  readonly resources: readonly string[];
+}
+
+const processGroupLauncher =
+  (
+    launcher: (
+      input: OwnedProviderProcessSpawnOptions,
+    ) => Promise<SpawnedOwnedProviderProcess>,
+  ) =>
+  async (
+    input: OwnedProviderProcessSpawnOptions,
+  ): Promise<OwnedCommandLaunch> => {
+    const launched = await launcher(input);
+    return {
+      launch: {
+        ...launched,
+        ownsProcessLifetime: true,
+        cleanup:
+          launched.cleanup ??
+          (() => cleanupOwnedProcessGroup(launched.ownership)),
+      },
+      resources: [
+        `pid:${launched.ownership.leaderPid}`,
+        `process-group:${launched.ownership.processGroupId}`,
+      ],
+    };
+  };
+
+const launchDirectChild = async (
+  input: OwnedProviderProcessSpawnOptions,
+): Promise<OwnedCommandLaunch> => {
+  const child = await spawnOwnedChildProcess(input);
+  // Without a cleanup capability the supervisor escalates TERM to KILL through
+  // this handle, which Node refuses to signal once the child has been reaped.
+  return {
+    launch: { process: child, ownsProcessLifetime: true },
+    resources: [`pid:${String(child.pid)}`],
+  };
 };
 
 const collectOwnedCommand = async (
@@ -79,12 +140,12 @@ const collectOwnedCommand = async (
   },
   launcher: (
     input: OwnedProviderProcessSpawnOptions,
-  ) => Promise<SpawnedOwnedProviderProcess>,
+  ) => Promise<OwnedCommandLaunch>,
   deadline: ProviderStartupDeadline,
   callerSignal?: AbortSignal,
 ): Promise<ProviderProcessSnapshot> => {
   const signal = deadline.signal;
-  let launched: SpawnedOwnedProviderProcess;
+  let launched: OwnedCommandLaunch;
   try {
     launched = await launcher({
       ...spawn,
@@ -106,23 +167,13 @@ const collectOwnedCommand = async (
   }
   let exceeded = false;
   let processFailure: string | undefined;
-  const supervisor = new ProviderProcessSupervisor(
-    {
-      ...launched,
-      ownsProcessLifetime: true,
-      cleanup:
-        launched.cleanup ??
-        (() => cleanupOwnedProcessGroup(launched.ownership)),
+  const supervisor = new ProviderProcessSupervisor(launched.launch, {
+    maxDiagnosticBytes: limits.diagnosticBytes,
+    onDiagnostic: (event) => {
+      if (event.type === "output" && event.truncated === true) exceeded = true;
+      if (event.type === "error") processFailure = event.message;
     },
-    {
-      maxDiagnosticBytes: limits.diagnosticBytes,
-      onDiagnostic: (event) => {
-        if (event.type === "output" && event.truncated === true)
-          exceeded = true;
-        if (event.type === "error") processFailure = event.message;
-      },
-    },
-  );
+  });
   let failure: OwnedCommandFailure | undefined;
   try {
     while (!(await supervisor.waitForOutputClose(10))) {
@@ -205,8 +256,7 @@ const collectOwnedCommand = async (
       [
         spawn.runId,
         ...(spawn.cwd === undefined ? [] : [spawn.cwd]),
-        `pid:${launched.ownership.leaderPid}`,
-        `process-group:${launched.ownership.processGroupId}`,
+        ...launched.resources,
       ],
       supervisor,
     );

@@ -130,7 +130,14 @@ export class HistoricalCaptureDecoder {
           timeoutMs: WEB_NETWORK_CAPTURE_LIMITS.timeoutMs,
           diagnosticBytes: 1024 * 1024,
         },
-        options?.signal === undefined ? {} : { signal: options.signal },
+        {
+          // Only the owned launcher enforces a requested memory limit.
+          ...(adapter.supervision === "direct-child" &&
+          command.memoryLimitBytes === undefined
+            ? { supervision: "direct-child" as const }
+            : {}),
+          ...(options?.signal === undefined ? {} : { signal: options.signal }),
+        },
       );
       // A decoder that survived a failed allocation may still reply; its
       // reply is not trusted as complete once the limit was reached.

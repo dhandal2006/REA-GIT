@@ -34,8 +34,10 @@ macOS also requires Apple's Swift compiler through `xcrun` for process
 ownership inspection. REA compiles its packaged, narrow process-inspection
 helper into a private temporary directory before a capture or owned provider
 process starts; the same prerequisite applies to owned provider-process
-supervision on macOS. REA removes that directory when it exits. REA does not
-install Xcode, Command Line Tools, or other software. Capability checks prepare
+supervision on macOS. REA removes that directory when it exits. The HAR
+decoder behind `inspect_web_network_capture` creates no descendant processes and
+is supervised through its child process handle, so it does not need this helper.
+REA does not install Xcode, Command Line Tools, or other software. Capability checks prepare
 this helper before reporting macOS capture as available.
 
 ## Capture a command

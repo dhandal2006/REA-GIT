@@ -13,6 +13,7 @@ const MITMDUMP_REQUIREMENT =
 export class MitmproxyCaptureAdapter implements HistoricalCaptureFormatAdapter {
   readonly format = "mitmproxy";
   readonly identity = MITMPROXY_CAPTURE_PROVIDER_IDENTITY;
+  readonly supervision = "process-group";
   constructor(readonly environment: Readonly<NodeJS.ProcessEnv>) {}
   async command(
     requestPath: string,
