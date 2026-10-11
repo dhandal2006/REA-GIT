@@ -17,6 +17,7 @@ import {
   ghidraProfileLanguageOverride,
   sameGhidraLanguageOverride,
 } from "./GhidraAnalysisProfile.js";
+import { ghidraPinnedMipsLanguage } from "./GhidraMipsProfile.js";
 import type { AnalysisProfileCommitment } from "../domain/analysisProfile.js";
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import {
@@ -420,6 +421,20 @@ export const createGhidraProviderClient = (input: {
   const languageOverride = ghidraProfileLanguageOverride(
     committedProfile.parameters,
   );
+  const pinnedLanguage = ghidraPinnedMipsLanguage(committedProfile.parameters);
+  if (
+    pinnedLanguage !== undefined &&
+    (languageOverride !== undefined ||
+      config.ghidraLanguageOverride !== undefined)
+  )
+    return unavailableClient(
+      new ProviderAdapterError("ghidra", "open_binary", {
+        diagnostics: {
+          reason:
+            "The committed legacy MIPS profile pins its import language; REA_GHIDRA_LANGUAGE_ID/REA_GHIDRA_COMPILER_SPEC_ID cannot be combined with it. Reopen the target without the override.",
+        },
+      }),
+    );
   if (
     !sameGhidraLanguageOverride(languageOverride, config.ghidraLanguageOverride)
   )
@@ -431,6 +446,9 @@ export const createGhidraProviderClient = (input: {
         },
       }),
     );
+  // Import language: a caller-selected override wins; a provider-pinned legacy
+  // MIPS profile supplies its own because header auto-selection misselects.
+  const importLanguage = languageOverride ?? pinnedLanguage;
   const invalidProfile = validateGhidraExtensionProfile(
     extensions,
     config,
@@ -467,6 +485,13 @@ export const createGhidraProviderClient = (input: {
     ...(target.kind === "executable" && target.architecture === "mips"
       ? (target.mips.limitations ?? [])
       : []),
+    ...(committedProfile.parameters.mips_abi_basis ===
+    "inferred-o32-assumption-v1"
+      ? [
+          "The ELF header declares no ABI field and no ABI flags record was observed; o32 calling conventions are an analysis assumption of this lane, not a declared fact.",
+          "Floating-point ABI semantics are unverified for this recordless legacy admission.",
+        ]
+      : []),
   ];
   const providerLimitations =
     installation.platform === "win32"
@@ -500,7 +525,7 @@ export const createGhidraProviderClient = (input: {
               baseAddr: target.entryPoint,
             },
           }),
-      ...(languageOverride === undefined ? {} : { languageOverride }),
+      ...(importLanguage === undefined ? {} : { languageOverride: importLanguage }),
       ...(seeds === undefined ? {} : { analysisSeeds: seeds }),
       platform: installation.platform,
       ...(extensions.length === 0 ? {} : { analysisExtensions: extensions }),
@@ -522,13 +547,13 @@ export const createGhidraProviderClient = (input: {
           expectedCompilerSpecId: "default",
         }
       : rawLanguage === undefined
-        ? languageOverride === undefined
+        ? importLanguage === undefined
           ? {}
           : {
-              expectedLanguageId: languageOverride.languageId,
-              ...(languageOverride.compilerSpecId === undefined
+              expectedLanguageId: importLanguage.languageId,
+              ...(importLanguage.compilerSpecId === undefined
                 ? {}
-                : { expectedCompilerSpecId: languageOverride.compilerSpecId }),
+                : { expectedCompilerSpecId: importLanguage.compilerSpecId }),
             }
         : {
             expectedLanguageId: rawLanguage.languageId,
