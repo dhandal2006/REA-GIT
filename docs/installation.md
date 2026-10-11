@@ -162,6 +162,7 @@ listed after the table because its connector is not one of these files:
 | OMP                | `omp`            |
 | Pi                 | `pi`             |
 | Hermes             | `hermes`         |
+| DeepSeek Harness   | `dsh`            |
 
 For GitHub Copilot CLI 1.0.95, `gpt-4.1` model metadata can block ordinary
 chat with REA's full input-schema profile before sending a model request
@@ -259,11 +260,14 @@ configuration and skill destinations; doctor and uninstall use those same paths.
 
 ### DeepSeek Harness
 
-DeepSeek Harness uses a Cordis YAML patch sequence rather than a `mcpServers`
-object. REA's `setup --client` does not edit this format. For Harness
-`0.2.0-rc.2`, append the following entry to `$DSH_HOME/cordis.patch.yml`
-(`~/.dsh/cordis.patch.yml` when `DSH_HOME` is unset). Preserve existing patches
-and replace the executable paths with absolute paths from your installation:
+DeepSeek Harness registers MCP clients through a Cordis YAML patch sequence
+rather than a `mcpServers` object. `rea setup --client dsh` appends (or
+replaces) the REA entry in the home patch `$DSH_HOME/cordis.patch.yml`
+(`~/.dsh/cordis.patch.yml` when `DSH_HOME` is unset), preserving unrelated
+patches and comments; `rea doctor --client dsh` and `rea uninstall --client dsh`
+use the same entry id. The home patch applies to every Harness profile, so the
+registration is written once and no per-profile edit is needed. The written
+entry is:
 
 ```yaml
 - insert:
@@ -274,17 +278,15 @@ and replace the executable paths with absolute paths from your installation:
         transport: stdio
         command: /absolute/path/to/node
         args: ["/absolute/path/to/rea/scripts/rea.mjs", mcp]
-        cwd: !!js process.cwd()
 ```
 
 For a global npm installation, the launcher is under
-`$(npm root -g)/rea-agents/scripts/rea.mjs`. Check the Node executable with
-`command -v node`. Register `serverName: rea` only once in each active profile,
-then restart Harness. It exposes tools as `mcp__rea__<tool_name>`.
-Run `rea setup --skill --dry-run`, review the destination, then
-`rea setup --skill --yes` to install the workflow in `~/.agents/skills`.
-Harness discovers that directory, or `$DSH_AGENTS_HOME/skills` when configured;
-its native `skill` tool can load `reverse-engineer-anything`.
+`$(npm root -g)/rea-agents/scripts/rea.mjs`. Restart Harness after setup; it
+exposes tools as `mcp__rea__<tool_name>`. Run `rea setup --skill --dry-run`,
+review the destination, then `rea setup --skill --yes` to install the workflow
+in `~/.agents/skills` (`$DSH_AGENTS_HOME/skills` when configured); Harness
+discovers that directory, and its native `skill` tool can load
+`reverse-engineering-anything`.
 
 REA's optional [native client verification](testing.md#end-to-end-integration-and-golden-evidence)
 checks headless chat, skill loading, all tool input schemas and actual analysis
