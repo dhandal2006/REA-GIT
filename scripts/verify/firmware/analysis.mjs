@@ -138,6 +138,16 @@ try {
         chunk.range.length === 64,
     ),
   );
+  assert.ok(
+    cliFiles.extraction_gaps.some(
+      (gap) =>
+        gap.kind === "unknown-chunk-handler" &&
+        gap.range !== null &&
+        gap.range.offset === 0 &&
+        gap.range.length === 64,
+    ),
+    "The unknown chunk must carry its explicit recovery row",
+  );
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
@@ -181,6 +191,15 @@ try {
   );
   assert.equal(depthResult.coverage, "partial");
   assert.ok(depthResult.depth_limited_paths.length > 0);
+  assert.ok(
+    depthResult.extraction_gaps.some(
+      (gap) =>
+        gap.kind === "depth-limited" &&
+        gap.dependencies.length === 0 &&
+        gap.continuation.includes("max_depth"),
+    ),
+    "Depth-limited paths must carry the explicit depth continuation",
+  );
   console.log(
     "PASS real Binwalk/Unblob: CLI, MCP, independent offsets/digests, range extraction, unknown chunks and depth limits",
   );
@@ -217,8 +236,17 @@ try {
     );
     assert.equal(partial.coverage, "partial");
     assert.ok(JSON.stringify(partial.diagnostics).includes("debugfs"));
+    assert.ok(
+      partial.extraction_gaps.some(
+        (gap) =>
+          gap.kind === "missing-extractor-dependency" &&
+          gap.dependencies.includes("debugfs") &&
+          gap.handler === "extfs",
+      ),
+      "The missing extractor must be named in its explicit recovery row",
+    );
     console.log(
-      "PASS real missing-extractor diagnostics retained despite Unblob exit 1",
+      "PASS real missing-extractor diagnostics and recovery row retained despite Unblob exit 1",
     );
   }
   if (process.env.REA_FIRMWARE_VERIFY_GHIDRA === "1") {
